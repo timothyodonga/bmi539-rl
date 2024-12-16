@@ -1,32 +1,11 @@
 # %%
-# The necessary imports needed to run the rl-dbs environment
-# Convert this script to a jupyter notebook so that it can run on colar
-# TODO-  For colab you will have to include the imports like in Yusen's notebook
+
+from datetime import datetime
+
 import numpy as np
-from rl_cardiac.tcn_model import TCN_config
-from rl_cardiac.cardiac_model import CardiacModel_Env
-
-
-# env = gym.make('oscillator-v0')
-
-# env = rl_dbs.gym_oscillator.envs.oscillatorEnv()
-
-# %%
-# Imports from the NAF implementation
-import argparse
-import math
-from collections import namedtuple
-from itertools import count
-
-import gym
-import numpy as np
+import pandas as pd
 import torch
-from gym import wrappers
-
-# %%
-# from tensorboardX import SummaryWriter
 from torch.utils.tensorboard import SummaryWriter
-from tqdm import tqdm
 
 # %%
 #
@@ -34,14 +13,14 @@ from tqdm import tqdm
 from dqn_naf.naf import NAF
 from dqn_naf.normalized_actions import NormalizedActions
 from dqn_naf.ounoise import OUNoise
-from dqn_naf.param_noise import AdaptiveParamNoiseSpec, ddpg_distance_metric
 from dqn_naf.replay_memory import ReplayMemory, Transition
-from datetime import datetime
-import pandas as pd
+from rl_cardiac.cardiac_model import CardiacModel_Env
+from rl_cardiac.tcn_model import TCN_config
 
+# %%
 print(torch.cuda.is_available())
 # %%
-# TODO - Update these values to suit the rlb-dbs problem
+
 gamma = 0.99
 tau = 0.001
 ou_noise = True
@@ -69,7 +48,6 @@ env = NormalizedActions(CardiacModel_Env(tcn_model, rat_type))
 writer = SummaryWriter(log_dir="./runs_cardiac")
 
 # %%
-# env.seed(seed) #TODO - Double check this
 torch.manual_seed(seed)
 np.random.seed(seed)
 
@@ -88,15 +66,6 @@ memory = ReplayMemory(replay_size)
 
 # %%
 ounoise = OUNoise(env.action_space.shape[0]) if ou_noise else None
-param_noise = (
-    AdaptiveParamNoiseSpec(
-        initial_stddev=0.05,
-        desired_action_stddev=noise_scale,
-        adaptation_coefficient=1.05,
-    )
-    if param_noise
-    else None
-)
 
 # %%
 rewards = []
@@ -109,7 +78,6 @@ df_loss = pd.DataFrame()
 # %%
 for i_episode in range(num_episodes):
     total_numsteps = 0
-    # print(f"Episode: {i_episode}")
     state = torch.Tensor([env.reset()[0]])
 
     if ou_noise:
@@ -121,10 +89,8 @@ for i_episode in range(num_episodes):
     episode_reward = 0
 
     while True:
-        # print("Collecting transitions to fill  the memory buffer")
         action = agent.select_action(state, ounoise, param_noise)
-        # NOTE - In the previous implementation. They had misnamed the action function
-        # This is why the code was not working
+
         next_state, reward, terminated, truncated, _ = env.step(action.numpy()[0])
 
         done = terminated or truncated
@@ -142,9 +108,7 @@ for i_episode in range(num_episodes):
         state = next_state
 
         if len(memory) > batch_size:
-            # print(
-            #     "Now updating the agent using the collected transitions in the memory buffer"
-            # )
+
             for _ in range(updates_per_step):
                 transitions = memory.sample(batch_size)
                 batch = Transition(*zip(*transitions))
@@ -197,7 +161,6 @@ for i_episode in range(num_episodes):
         if done:
             break
 
-    # print(f"Episode {i_episode}, Reward {episode_reward}")
     writer.add_scalar("total reward per eposide/train", episode_reward, i_episode)
     writer.add_scalar(
         "Normalized rewards",
@@ -209,7 +172,6 @@ for i_episode in range(num_episodes):
     )
 
     df_train = pd.concat([df_train, dd], ignore_index=True)
-    # writer.add_scalar("reward/noise", ounoise, i_episode)
 
     # Save the weights to the rewards of the best performing model
     if episode_reward > best_rewards:
@@ -218,23 +180,8 @@ for i_episode in range(num_episodes):
             env_name=f"best_rl_cardiac_noise_{str(ou_noise)}_{rat_type}_{timestamp}"
         )
 
-    # Update param_noise based on distance metric
-    if param_noise:
-        episode_transitions = memory.memory[memory.position - t : memory.position]
-        states = torch.cat([transition[0] for transition in episode_transitions], 0)
-        unperturbed_actions = agent.select_action(states, None, None)
-        perturbed_actions = torch.cat(
-            [transition[1] for transition in episode_transitions], 0
-        )
-
-        ddpg_dist = ddpg_distance_metric(
-            perturbed_actions.numpy(), unperturbed_actions.numpy()
-        )
-        param_noise.adapt(ddpg_dist)
-
     rewards.append(episode_reward)
 
-    # print("Now testing the trained agent")
     if i_episode % 10 == 0:
         print(f"Episode: {i_episode}")
         state = torch.Tensor([env.reset()[0]])
@@ -281,5 +228,3 @@ agent.save_model(
 )
 # %%
 env.close()
-
-# %%
