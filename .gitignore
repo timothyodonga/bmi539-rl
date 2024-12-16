@@ -171,3 +171,5 @@ models/
 runs/
 
 runs_cardiac/
+
+*.png

@@ -1,17 +1,4 @@
 # %%
-# The necessary imports needed to run the rl-dbs environment
-# Convert this script to a jupyter notebook so that it can run on colar
-# TODO-  For colab you will have to include the imports like in Yusen's notebook
-import numpy as np
-from rl_cardiac.tcn_model import TCN_config
-from rl_cardiac.cardiac_model import CardiacModel_Env
-
-
-# env = gym.make('oscillator-v0')
-
-# env = rl_dbs.gym_oscillator.envs.oscillatorEnv()
-
-# %%
 # Imports from the NAF implementation
 import argparse
 import math
@@ -19,54 +6,49 @@ from collections import namedtuple
 from itertools import count
 
 import gym
+import gymnasium as gym
 import numpy as np
 import torch
 from gym import wrappers
-
-# %%
-# from tensorboardX import SummaryWriter
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
-# %%
-#
-# Add the rest of the imports here
-from dqn_naf.naf import NAF
+import rl_dbs.gym_oscillator
+import rl_dbs.gym_oscillator.envs
+import rl_dbs.oscillator_cpp
+from dqn_naf.naf_tvb import NAF
 from dqn_naf.normalized_actions import NormalizedActions
 from dqn_naf.ounoise import OUNoise
 from dqn_naf.param_noise import AdaptiveParamNoiseSpec, ddpg_distance_metric
 from dqn_naf.replay_memory import ReplayMemory, Transition
-from datetime import datetime
-import pandas as pd
+from TVB.tvb_wrapper import TVBWrapper
 
 print(torch.cuda.is_available())
 # %%
-# TODO - Update these values to suit the rlb-dbs problem
+# TODO - Update these values to suit the tvb oscillar problem
 gamma = 0.99
 tau = 0.001
 ou_noise = True
 param_noise = False
-noise_scale = 1.0
-final_noise_scale = 0.5
+noise_scale = 0.3
+final_noise_scale = 0.3
 exploration_end = 50
 seed = 0
-batch_size = 128
+batch_size = 64
 num_steps = 500
-num_episodes = 5000
+num_episodes = 1000
 hidden_size = 32
 updates_per_step = 10
-replay_size = 10000
+replay_size = 256
 t = 2
 
-rat_type = "hypertension_exercise"
-timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
 # %%
-tcn_model = TCN_config(rat_type)
-env = NormalizedActions(CardiacModel_Env(tcn_model, rat_type))
+
+env = NormalizedActions(TVBWrapper())
 
 # %%
-writer = SummaryWriter(log_dir="./runs_cardiac")
+writer = SummaryWriter()
 
 # %%
 # env.seed(seed) #TODO - Double check this
@@ -101,10 +83,6 @@ param_noise = (
 # %%
 rewards = []
 updates = 0
-best_rewards = -1e6
-
-df_train = pd.DataFrame()
-df_loss = pd.DataFrame()
 
 # %%
 for i_episode in range(num_episodes):
@@ -120,7 +98,7 @@ for i_episode in range(num_episodes):
 
     episode_reward = 0
 
-    while True:
+    while True and total_numsteps < num_steps:
         # print("Collecting transitions to fill  the memory buffer")
         action = agent.select_action(state, ounoise, param_noise)
         # NOTE - In the previous implementation. They had misnamed the action function
@@ -154,69 +132,13 @@ for i_episode in range(num_episodes):
                 writer.add_scalar("loss/value", value_loss, updates)
                 writer.add_scalar("loss/policy", policy_loss, updates)
 
-                l1 = torch.sum(torch.abs(agent.model.state_dict()["linear1.weight"]))
-                l2 = torch.sum(torch.abs(agent.model.state_dict()["linear2.weight"]))
-                l3 = torch.sum(torch.abs(agent.model.state_dict()["linear3.weight"]))
-                l4 = torch.sum(torch.abs(agent.model.state_dict()["linear4.weight"]))
-                writer.add_scalar(
-                    "weights/linear1",
-                    l1,
-                    updates,
-                ),
-                writer.add_scalar(
-                    "weights/linear2",
-                    l2,
-                    updates,
-                ),
-                writer.add_scalar(
-                    "weights/linear3",
-                    l3,
-                    updates,
-                ),
-                writer.add_scalar(
-                    "weights/linear4",
-                    l4,
-                    updates,
-                )
-
                 updates += 1
-
-                d = pd.DataFrame(
-                    {
-                        "updates": [updates],
-                        "linear1": [l1],
-                        "linear2": [l2],
-                        "linear3": [l3],
-                        "linear4": [l4],
-                        "value_loss": [value_loss],
-                    }
-                )
-
-                df_loss = pd.concat([df_loss, d], ignore_index=True)
 
         if done:
             break
 
     # print(f"Episode {i_episode}, Reward {episode_reward}")
-    writer.add_scalar("total reward per eposide/train", episode_reward, i_episode)
-    writer.add_scalar(
-        "Normalized rewards",
-        episode_reward / 100,
-        i_episode,
-    )
-    dd = pd.DataFrame(
-        {"episode": [i_episode], "reward_per_step": [episode_reward / 100]}
-    )
-
-    df_train = pd.concat([df_train, dd], ignore_index=True)
-    # writer.add_scalar("reward/noise", ounoise, i_episode)
-
-    # Save the weights to the rewards of the best performing model
-    if episode_reward > best_rewards:
-        best_rewards = episode_reward
-        agent.save_model(
-            env_name=f"best_rl_cardiac_noise_{str(ou_noise)}_{rat_type}_{timestamp}"
-        )
+    writer.add_scalar("reward/train", episode_reward, i_episode)
 
     # Update param_noise based on distance metric
     if param_noise:
@@ -259,27 +181,13 @@ for i_episode in range(num_episodes):
         writer.add_scalar("reward/test", episode_reward, i_episode)
 
         rewards.append(episode_reward)
+        # print(
+        #     "Episode: {}, total numsteps: {}, reward: {}, average reward: {}".format(
+        #         i_episode, total_numsteps, rewards[-1], np.mean(rewards[-10:])
+        #     )
+        # )
 
 # %%
-df_loss["linear1"] = df_loss["linear1"].apply(lambda x: x.item())
-df_loss["linear2"] = df_loss["linear2"].apply(lambda x: x.item())
-df_loss["linear3"] = df_loss["linear3"].apply(lambda x: x.item())
-df_loss["linear4"] = df_loss["linear4"].apply(lambda x: x.item())
-
-# %%
-df_loss.to_csv(
-    f"rl_cardiac_best_noise_{str(ou_noise)}_{rat_type}_{timestamp}_loss.csv",
-    index=False,
-)
-df_train.to_csv(
-    f"rl_cardiac_best_noise_{str(ou_noise)}_{rat_type}_{timestamp}_rewards.csv",
-    index=False,
-)
-# %%
-agent.save_model(
-    env_name=f"rl_cardiac_best_noise_{str(ou_noise)}_{rat_type}_{timestamp}"
-)
+agent.save_model(env_name="rl-tvb")
 # %%
 env.close()
-
-# %%
