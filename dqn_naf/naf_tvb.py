@@ -6,7 +6,6 @@ from torch.optim import Adam
 from torch.autograd import Variable
 import torch.nn.functional as F
 import os
-import torch.nn.init as init
 
 
 def MSELoss(input, target):
@@ -21,14 +20,6 @@ def soft_update(target, source, tau):
 def hard_update(target, source):
     for target_param, param in zip(target.parameters(), source.parameters()):
         target_param.data.copy_(param.data)
-
-
-# Initialize weights using Xavier initialization
-def init_weights(m):
-    if isinstance(m, nn.Linear):
-        init.xavier_uniform_(m.weight)  # Xavier uniform initialization
-        if m.bias is not None:
-            init.zeros_(m.bias)  # Initialize biases to zero
 
 
 class Policy(nn.Module):
@@ -51,16 +42,6 @@ class Policy(nn.Module):
         self.bn2 = nn.BatchNorm1d(hidden_size)
         self.bn2.weight.data.fill_(1)
         self.bn2.bias.data.fill_(0)
-
-        self.linear3 = nn.Linear(hidden_size, hidden_size)
-        self.bn3 = nn.BatchNorm1d(hidden_size)
-        self.bn3.weight.data.fill_(1)
-        self.bn3.bias.data.fill_(0)
-
-        self.linear4 = nn.Linear(hidden_size, hidden_size)
-        self.bn4 = nn.BatchNorm1d(hidden_size)
-        self.bn4.weight.data.fill_(1)
-        self.bn4.bias.data.fill_(0)
 
         self.V = nn.Linear(hidden_size, 1)
         self.V.weight.data.mul_(0.1)
@@ -86,8 +67,6 @@ class Policy(nn.Module):
         x = self.bn0(x)
         x = F.tanh(self.linear1(x))
         x = F.tanh(self.linear2(x))
-        x = F.tanh(self.linear3(x))
-        x = F.tanh(self.linear4(x))
 
         V = self.V(x)
         mu = F.tanh(self.mu(x))
@@ -117,17 +96,16 @@ class NAF:
 
         self.model = Policy(hidden_size, num_inputs, action_space)
         self.target_model = Policy(hidden_size, num_inputs, action_space)
-        self.optimizer = Adam(self.model.parameters(), lr=1e-4, weight_decay=1e-5)
+        self.optimizer = Adam(self.model.parameters(), lr=1e-3)
 
         self.gamma = gamma
         self.tau = tau
-
-        # self.model.apply(init_weights)
 
         hard_update(self.target_model, self.model)
 
     def select_action(self, state, action_noise=None, param_noise=None):
         self.model.eval()
+
         mu, _, _ = self.model((Variable(state), None))
         self.model.train()
         mu = mu.data
@@ -154,16 +132,9 @@ class NAF:
         _, state_action_values, _ = self.model((state_batch, action_batch))
 
         loss = MSELoss(state_action_values, expected_state_action_values)
-        # loss = nn.HuberLoss(
-        #     torch.tensor(state_action_values.detach().numpy(), requires_grad=True),
-        #     torch.tensor(
-        #         expected_state_action_values.detach().numpy(), requires_grad=True
-        #     ),
-        # )
 
         self.optimizer.zero_grad()
         loss.backward()
-
         torch.nn.utils.clip_grad_norm(self.model.parameters(), 1)
         self.optimizer.step()
 

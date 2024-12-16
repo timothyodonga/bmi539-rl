@@ -1,18 +1,4 @@
 # %%
-# The necessary imports needed to run the rl-dbs environment
-# Convert this script to a jupyter notebook so that it can run on colar
-# TODO-  For colab you will have to include the imports like in Yusen's notebook
-import numpy as np
-from rl_cardiac.tcn_model import TCN_config
-from rl_cardiac.cardiac_model import CardiacModel_Env
-
-rat_type = "hypertension_exercise"
-
-# env = gym.make('oscillator-v0')
-
-# env = rl_dbs.gym_oscillator.envs.oscillatorEnv()
-
-# %%
 # Imports from the NAF implementation
 import argparse
 import math
@@ -20,27 +6,26 @@ from collections import namedtuple
 from itertools import count
 
 import gym
+import gymnasium as gym
 import numpy as np
 import torch
 from gym import wrappers
-
-# %%
-# from tensorboardX import SummaryWriter
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
-# %%
-#
-# Add the rest of the imports here
-from dqn_naf.naf import NAF
+import rl_dbs.gym_oscillator
+import rl_dbs.gym_oscillator.envs
+import rl_dbs.oscillator_cpp
+from dqn_naf.naf_tvb import NAF
 from dqn_naf.normalized_actions import NormalizedActions
 from dqn_naf.ounoise import OUNoise
 from dqn_naf.param_noise import AdaptiveParamNoiseSpec, ddpg_distance_metric
 from dqn_naf.replay_memory import ReplayMemory, Transition
+from TVB.tvb_wrapper import TVBWrapper
 
 print(torch.cuda.is_available())
 # %%
-# TODO - Update these values to suit the rlb-dbs problem
+# TODO - Update these values to suit the tvb oscillar problem
 gamma = 0.99
 tau = 0.001
 ou_noise = True
@@ -59,11 +44,11 @@ t = 2
 
 
 # %%
-tcn_model = TCN_config(rat_type)
-env = NormalizedActions(CardiacModel_Env(tcn_model, rat_type))
+
+env = NormalizedActions(TVBWrapper())
 
 # %%
-writer = SummaryWriter(log_dir="./runs_cardiac")
+writer = SummaryWriter()
 
 # %%
 # env.seed(seed) #TODO - Double check this
@@ -203,6 +188,6 @@ for i_episode in range(num_episodes):
         # )
 
 # %%
-agent.save_model(env_name="rl-cardiac")
+agent.save_model(env_name="rl-tvb")
 # %%
 env.close()

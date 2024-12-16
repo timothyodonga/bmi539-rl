@@ -1,72 +1,46 @@
 # %%
-# The necessary imports needed to run the rl-dbs environment
-# Convert this script to a jupyter notebook so that it can run on colar
-# TODO-  For colab you will have to include the imports like in Yusen's notebook
-import gymnasium as gym
+
+from datetime import datetime
+
+import numpy as np
+import torch
+from torch.utils.tensorboard import SummaryWriter
+
 import rl_dbs.gym_oscillator
 import rl_dbs.gym_oscillator.envs
 import rl_dbs.oscillator_cpp
-import numpy as np
-
-# env = gym.make('oscillator-v0')
-
-# env = rl_dbs.gym_oscillator.envs.oscillatorEnv()
-
-# %%
-# Imports from the NAF implementation
-import argparse
-import math
-from collections import namedtuple
-from itertools import count
-
-import gym
-import numpy as np
-import torch
-from gym import wrappers
-
-# %%
-# from tensorboardX import SummaryWriter
-from torch.utils.tensorboard import SummaryWriter
-from tqdm import tqdm
-
-# %%
-#
-# Add the rest of the imports here
 from dqn_naf.naf import NAF
 from dqn_naf.normalized_actions import NormalizedActions
 from dqn_naf.ounoise import OUNoise
-from dqn_naf.param_noise import AdaptiveParamNoiseSpec, ddpg_distance_metric
 from dqn_naf.replay_memory import ReplayMemory, Transition
 
 print(torch.cuda.is_available())
 # %%
-# TODO - Update these values to suit the rlb-dbs problem
 gamma = 0.99
 tau = 0.001
 ou_noise = True
-param_noise = False
-noise_scale = 0.3
-final_noise_scale = 0.3
+param_noise = None
+noise_scale = 1
+final_noise_scale = 0.2
 exploration_end = 50
 seed = 0
-batch_size = 64
-num_steps = 500
+batch_size = 128
+num_steps = 200
 num_episodes = 1000
 hidden_size = 32
 updates_per_step = 10
-replay_size = 256
-t = 2
+replay_size = 8000
+
+timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
 
 # %%
-# env = NormalizedActions(gym.make("MountainCarContinuous-v0"))
-env = NormalizedActions(rl_dbs.gym_oscillator.envs.oscillatorEnv())
+env = NormalizedActions(rl_dbs.gym_oscillator.envs.oscillatorEnv(ep_length=num_steps))
 
 # %%
 writer = SummaryWriter()
 
 # %%
-# env.seed(seed) #TODO - Double check this
 torch.manual_seed(seed)
 np.random.seed(seed)
 
@@ -85,20 +59,11 @@ memory = ReplayMemory(replay_size)
 
 # %%
 ounoise = OUNoise(env.action_space.shape[0]) if ou_noise else None
-param_noise = (
-    AdaptiveParamNoiseSpec(
-        initial_stddev=0.05,
-        desired_action_stddev=noise_scale,
-        adaptation_coefficient=1.05,
-    )
-    if param_noise
-    else None
-)
 
 # %%
 rewards = []
 updates = 0
-
+best_rewards = -1e6
 # %%
 for i_episode in range(num_episodes):
     total_numsteps = 0
@@ -113,11 +78,9 @@ for i_episode in range(num_episodes):
 
     episode_reward = 0
 
-    while True and total_numsteps < num_steps:
-        # print("Collecting transitions to fill  the memory buffer")
+    while True:
+
         action = agent.select_action(state, ounoise, param_noise)
-        # NOTE - In the previous implementation. They had misnamed the action function
-        # This is why the code was not working
         next_state, reward, terminated, truncated, _ = env.step(action.numpy()[0])
 
         done = terminated or truncated
@@ -147,31 +110,46 @@ for i_episode in range(num_episodes):
                 writer.add_scalar("loss/value", value_loss, updates)
                 writer.add_scalar("loss/policy", policy_loss, updates)
 
+                writer.add_scalar(
+                    "weights/linear1",
+                    torch.sum(torch.abs(agent.model.state_dict()["linear1.weight"])),
+                    updates,
+                ),
+                writer.add_scalar(
+                    "weights/linear2",
+                    torch.sum(torch.abs(agent.model.state_dict()["linear2.weight"])),
+                    updates,
+                ),
+                writer.add_scalar(
+                    "weights/linear3",
+                    torch.sum(torch.abs(agent.model.state_dict()["linear3.weight"])),
+                    updates,
+                ),
+                writer.add_scalar(
+                    "weights/linear4",
+                    torch.sum(torch.abs(agent.model.state_dict()["linear4.weight"])),
+                    updates,
+                )
+
                 updates += 1
 
         if done:
             break
 
-    # print(f"Episode {i_episode}, Reward {episode_reward}")
-    writer.add_scalar("reward/train", episode_reward, i_episode)
+    writer.add_scalar("total reward per eposide/train", episode_reward, i_episode)
+    writer.add_scalar(
+        "average reward per step per episode/train",
+        episode_reward / num_steps,
+        i_episode,
+    )
 
-    # Update param_noise based on distance metric
-    if param_noise:
-        episode_transitions = memory.memory[memory.position - t : memory.position]
-        states = torch.cat([transition[0] for transition in episode_transitions], 0)
-        unperturbed_actions = agent.select_action(states, None, None)
-        perturbed_actions = torch.cat(
-            [transition[1] for transition in episode_transitions], 0
-        )
-
-        ddpg_dist = ddpg_distance_metric(
-            perturbed_actions.numpy(), unperturbed_actions.numpy()
-        )
-        param_noise.adapt(ddpg_dist)
+    # Save the weights to the rewards of the best performing model
+    if episode_reward > best_rewards:
+        best_rewards = episode_reward
+        agent.save_model(env_name=f"best_rl_dbs_noise_{str(ou_noise)}_{timestamp}")
 
     rewards.append(episode_reward)
 
-    # print("Now testing the trained agent")
     if i_episode % 10 == 0:
         print(f"Episode: {i_episode}")
         state = torch.Tensor([env.reset()[0]])
@@ -196,13 +174,8 @@ for i_episode in range(num_episodes):
         writer.add_scalar("reward/test", episode_reward, i_episode)
 
         rewards.append(episode_reward)
-        # print(
-        #     "Episode: {}, total numsteps: {}, reward: {}, average reward: {}".format(
-        #         i_episode, total_numsteps, rewards[-1], np.mean(rewards[-10:])
-        #     )
-        # )
 
 # %%
-agent.save_model(env_name="rl-dbs")
+agent.save_model(env_name=f"rl_dbs_best_noise_{str(ou_noise)}_{timestamp}")
 # %%
 env.close()
