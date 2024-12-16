@@ -1,47 +1,22 @@
 # %%
-# The necessary imports needed to run the rl-dbs environment
-# Convert this script to a jupyter notebook so that it can run on colar
-# TODO-  For colab you will have to include the imports like in Yusen's notebook
-# %%
-# Imports from the NAF implementation
-import argparse
-import math
 from collections import namedtuple
 from datetime import datetime
 from itertools import count
 
-import gym
-import gymnasium as gym
 import numpy as np
 import torch
-from gym import wrappers
-
-# %%
-# from tensorboardX import SummaryWriter
 from torch.utils.tensorboard import SummaryWriter
-from tqdm import tqdm
 
 import rl_dbs.gym_oscillator
 import rl_dbs.gym_oscillator.envs
 import rl_dbs.oscillator_cpp
-
-# %%
-#
-# Add the rest of the imports here
 from dqn_naf.naf import NAF
 from dqn_naf.normalized_actions import NormalizedActions
 from dqn_naf.ounoise import OUNoise
-from dqn_naf.param_noise import AdaptiveParamNoiseSpec, ddpg_distance_metric
 from dqn_naf.replay_memory import ReplayMemory, Transition
-
-# env = gym.make('oscillator-v0')
-
-# env = rl_dbs.gym_oscillator.envs.oscillatorEnv()
-
 
 print(torch.cuda.is_available())
 # %%
-# TODO - Update these values to suit the rlb-dbs problem
 gamma = 0.99
 tau = 0.001
 ou_noise = False
@@ -69,7 +44,6 @@ env = NormalizedActions(rl_dbs.gym_oscillator.envs.oscillatorEnv(ep_length=num_s
 writer = SummaryWriter()
 
 # %%
-# env.seed(seed) #TODO - Double check this
 torch.manual_seed(seed)
 np.random.seed(seed)
 
@@ -88,15 +62,6 @@ memory = ReplayMemory(replay_size)
 
 # %%
 ounoise = OUNoise(env.action_space.shape[0]) if ou_noise else None
-param_noise = (
-    AdaptiveParamNoiseSpec(
-        initial_stddev=0.05,
-        desired_action_stddev=noise_scale,
-        adaptation_coefficient=1.05,
-    )
-    if param_noise
-    else None
-)
 
 # %%
 rewards = []
@@ -189,20 +154,6 @@ for i_episode in range(num_episodes):
     if episode_reward > best_rewards:
         best_rewards = episode_reward
         agent.save_model(env_name=f"best_rl_dbs_noise_{str(ou_noise)}_{timestamp}")
-
-    # Update param_noise based on distance metric
-    if param_noise:
-        episode_transitions = memory.memory[memory.position - t : memory.position]
-        states = torch.cat([transition[0] for transition in episode_transitions], 0)
-        unperturbed_actions = agent.select_action(states, None, None)
-        perturbed_actions = torch.cat(
-            [transition[1] for transition in episode_transitions], 0
-        )
-
-        ddpg_dist = ddpg_distance_metric(
-            perturbed_actions.numpy(), unperturbed_actions.numpy()
-        )
-        param_noise.adapt(ddpg_dist)
 
     rewards.append(episode_reward)
 
