@@ -1,8 +1,9 @@
 # RL Course Project at Emory BMI Fall 2024
 
-This repository contains code implementation of the RL agent developed for the DBS synchrony suppression scenario and the VSN Cardiac Modulation scenario.
-You need to work from the project environment created by the TA. Alternatively you can manually install the dependencies from the notebooks folder that were created by the TA.  
-To run the different scenario, please use the following commands below. 
+This repository contains code implementation of the RL agent developed for the DBS synchrony suppression scenario and the VNS Cardiac Modulation scenario.
+If running on Oddjobs, you need to work from the project environment created by the TA. 
+Alternatively you can manually install the dependencies from the project.ipynb notebook folder that were created by the TA.  
+To run the different scenarios, please use the following commands below. 
 
 ## DBS Synchrony Suppression
 `python train_rl_dbs.py`
