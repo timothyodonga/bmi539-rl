@@ -1,7 +1,16 @@
-# RL Course at Emory BMI Fall 2024
-This git repo hosts the material for lab modules and (potentially) project related files for the reinforcement learning course at Emory BMI fall 2024. 
-The docker image is used as a jupyter server for jupyter notebooks. Alternatively, you can mount your own scripts into the container and run them from the terminal. 
+# RL Course Project at Emory BMI Fall 2024
 
+This repository contains code implementation of the RL agent developed for the DBS synchrony suppression scenario and the VSN Cardiac Modulation scenario.
+You need to work from the project environment created by the TA. Alternatively you can manually install the dependencies from the notebooks folder that were created by the TA.  
+To run the different scenario, please use the following commands below. 
+
+## DBS Synchrony Suppression
+`python train_rl_dbs.py`
+
+## VNS Cardiac Modulation
+`python train_cardiac.py`
+
+Here are the instructions originally shared by the TA to initially run the project notebooks that he created. 
 ## Lab Module
 Use the `Lab_module_1.ipynb` under `notebooks` folder to get started.
 ## Project
