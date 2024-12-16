@@ -1,7 +1,6 @@
 # %%
-from collections import namedtuple
+
 from datetime import datetime
-from itertools import count
 
 import numpy as np
 import torch
@@ -19,7 +18,7 @@ print(torch.cuda.is_available())
 # %%
 gamma = 0.99
 tau = 0.001
-ou_noise = False
+ou_noise = True
 param_noise = None
 noise_scale = 1
 final_noise_scale = 0.2
@@ -31,13 +30,11 @@ num_episodes = 1000
 hidden_size = 32
 updates_per_step = 10
 replay_size = 8000
-t = 2
 
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
 
 # %%
-# env = NormalizedActions(gym.make("MountainCarContinuous-v0"))
 env = NormalizedActions(rl_dbs.gym_oscillator.envs.oscillatorEnv(ep_length=num_steps))
 
 # %%
@@ -82,10 +79,8 @@ for i_episode in range(num_episodes):
     episode_reward = 0
 
     while True:
-        # print("Collecting transitions to fill  the memory buffer")
+
         action = agent.select_action(state, ounoise, param_noise)
-        # NOTE - In the previous implementation. They had misnamed the action function
-        # This is why the code was not working
         next_state, reward, terminated, truncated, _ = env.step(action.numpy()[0])
 
         done = terminated or truncated
@@ -141,14 +136,12 @@ for i_episode in range(num_episodes):
         if done:
             break
 
-    # print(f"Episode {i_episode}, Reward {episode_reward}")
     writer.add_scalar("total reward per eposide/train", episode_reward, i_episode)
     writer.add_scalar(
         "average reward per step per episode/train",
         episode_reward / num_steps,
         i_episode,
     )
-    # writer.add_scalar("reward/noise", ounoise, i_episode)
 
     # Save the weights to the rewards of the best performing model
     if episode_reward > best_rewards:
@@ -157,7 +150,6 @@ for i_episode in range(num_episodes):
 
     rewards.append(episode_reward)
 
-    # print("Now testing the trained agent")
     if i_episode % 10 == 0:
         print(f"Episode: {i_episode}")
         state = torch.Tensor([env.reset()[0]])
@@ -187,5 +179,3 @@ for i_episode in range(num_episodes):
 agent.save_model(env_name=f"rl_dbs_best_noise_{str(ou_noise)}_{timestamp}")
 # %%
 env.close()
-
-# %%
